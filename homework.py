@@ -95,7 +95,7 @@ def parse_status(homework):
     else:
         homework_name = homework.get('homework_name')
         if homework_name is None:
-            raise KeyError('Отсутствует ключ "homework_name" ')
+            raise KeyError('Отсутствует название домашней работы.')
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -120,8 +120,8 @@ def main():
             timestamp = response.get('current_date')
 
         except Exception as error:
-            logging.error(error)
             message = f'Сбой в работе программы: {error}'
+            logging.error(message)
             send_message(bot, message)
 
         finally:
