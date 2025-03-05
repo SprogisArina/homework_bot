@@ -88,26 +88,32 @@ def get_api_answer(timestamp):
 
 def check_response(response):
     """Проверяет ответ API на соответствие документации."""
-    if isinstance(response, dict):
-        homeworks = response.get('homeworks')
-        current_date = response.get('current_date')
-        if homeworks is None or current_date is None:
-            raise KeyError('Отсутствуют ожидаемые ключи в ответе API.')
-        elif not isinstance(homeworks, list):
-            raise TypeError(
-                'Данные под ключом "homeworks" приходят не в виде списка.'
-            )
-    else:
-        raise TypeError('Структура данных ответа не соответствует ожиданиям.')
-    return response
+    logger.debug('Начало проверки ответа API.')
+    if not isinstance(response, dict):
+        raise TypeError(
+            f'Тип данных ответа {type(response)}. Ожидается dict.'
+        )
+    if not ('homeworks' in response):
+        raise KeyError(
+            'Отсутствует ключ "homeworks" в ответе API.'
+        )
+    homeworks = response['homeworks']
+    if not isinstance(homeworks, list):
+        raise TypeError(
+            f'Данные под ключом "homeworks" приходят в виде {type(homeworks)}.'
+            'Ожидается list.'
+        )
+    logger.debug('Успешное завершение проверки ответа.')
 
 
 def parse_status(homework):
     """Извлекает статус домашней работы."""
+    if not 'status' in homework:
+        raise 
     homework_status = homework.get('status')
     verdict = HOMEWORK_VERDICTS.get(homework_status)
     if verdict is None:
-        raise Exception('Неожиданный статус домашней работы.')
+        raise ValueError('Неожиданный статус домашней работы.')
     else:
         homework_name = homework.get('homework_name')
         if homework_name is None:
