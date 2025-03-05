@@ -93,7 +93,7 @@ def check_response(response):
         raise TypeError(
             f'Тип данных ответа {type(response)}. Ожидается dict.'
         )
-    if not ('homeworks' in response):
+    if 'homeworks' not in response:
         raise KeyError(
             'Отсутствует ключ "homeworks" в ответе API.'
         )
@@ -108,17 +108,22 @@ def check_response(response):
 
 def parse_status(homework):
     """Извлекает статус домашней работы."""
-    if not 'status' in homework:
-        raise 
+    logger.debug('Полуение статуса домашней работы.')
+    homework_keys = [
+        key for key in ('status', 'homework_name') if key not in homework
+    ]
+    if homework_keys:
+        raise KeyError(
+            f'Отсутствуют ключи {",".join(homework_keys)} в ответе API.'
+        )
     homework_status = homework.get('status')
+    homework_name = homework.get('homework_name')
+    if homework_status not in HOMEWORK_VERDICTS:
+        raise ValueError(
+            f'Неожиданный статус домашней работы: {homework_status}.'
+        )
     verdict = HOMEWORK_VERDICTS.get(homework_status)
-    if verdict is None:
-        raise ValueError('Неожиданный статус домашней работы.')
-    else:
-        homework_name = homework.get('homework_name')
-        if homework_name is None:
-            raise KeyError('Отсутствует название домашней работы.')
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
