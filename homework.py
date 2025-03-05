@@ -1,8 +1,8 @@
-import http
 import logging
 import os
 import sys
 import time
+from http import HTTPStatus
 
 import requests
 from dotenv import load_dotenv
@@ -27,7 +27,7 @@ HOMEWORK_VERDICTS = {
 }
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
 handler = logging.StreamHandler(stream=sys.stdout)
 handler.setFormatter(formatter)
@@ -73,12 +73,12 @@ def get_api_answer(timestamp):
         response = requests.get(
             ENDPOINT, headers=HEADERS, params={'from_date': timestamp}
         )
+        response_status = response.status_code
     except requests.RequestException as error:
         raise ConnectionError(f'Сбой при запросе к эндпойнту: {error}.')
     else:
         response = response.json()
-        response_status = http.HTTPStatus
-        if response_status != 200:
+        if response_status != HTTPStatus.OK:
             raise ResponseStatusException(
                 f'Статус ответа: {response_status}. Ожидается 200.'
             )
@@ -108,7 +108,7 @@ def check_response(response):
 
 def parse_status(homework):
     """Извлекает статус домашней работы."""
-    logger.debug('Полуение статуса домашней работы.')
+    logger.debug('Извлечение статуса домашней работы.')
     homework_keys = [
         key for key in ('status', 'homework_name') if key not in homework
     ]
@@ -123,6 +123,7 @@ def parse_status(homework):
             f'Неожиданный статус домашней работы: {homework_status}.'
         )
     verdict = HOMEWORK_VERDICTS.get(homework_status)
+    logger.debug('Успешное завершение извлечения статуса.')
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -132,24 +133,28 @@ def main():
 
     bot = TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
+    previous_message = ''
 
     while True:
         try:
             response = get_api_answer(timestamp)
             check_response(response)
             homeworks = response.get('homeworks')
-            if len(homeworks) != 0:
-                for homework in homeworks:
-                    homework_status = parse_status(homework)
-                    send_message(bot, homework_status)
-            else:
-                logger.debug('Отсутствие в ответе новых статусов.')
-            timestamp = response.get('current_date')
-
+            if not homeworks:
+                logger.debug('Обновления отсутствуют.')
+                continue
+            message = parse_status(homeworks[0])
+            if message != previous_message:
+                send_message(bot, message)
+                previous_message = message
+            timestamp = response.get('current_date', default=timestamp)
+        # except
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            logger.error(message)
-            send_message(bot, message)
+            logger.exception(message)
+            if message != previous_message:
+                send_message(bot, message)
+                previous_message = message
 
         finally:
             time.sleep(RETRY_PERIOD)
