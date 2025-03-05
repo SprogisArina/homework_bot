@@ -1,3 +1,4 @@
+import http
 import logging
 import os
 import sys
@@ -19,54 +20,69 @@ RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
-
 HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-logging.basicConfig(
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    level=logging.INFO,
-)
-
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
 handler = logging.StreamHandler(stream=sys.stdout)
+handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+
+class ResponseStatusException(Exception):
+    """Исключение для случая, когда сатус ответа отличен от 200."""
+
+    pass
 
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    for token in (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID):
-        if token is None:
-            logging.critical(
-                'Отсутствует обязательная переменная окружения'
-            )
-            sys.exit(1)
+    tokens = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
+    missing_tokens = [
+        token for token in tokens if globals()[token] in (None, '')
+    ]
+    if missing_tokens:
+        logger.critical(
+            'Отсутствуют обязательные переменные окружения: '
+            f'{", ".join(missing_tokens)}'
+        )
+        raise ValueError('Доступны не все переменные окружения.')
 
 
 def send_message(bot, message):
     """Отправляет сообщение в Telegram-чат."""
+    logger.debug('Начало отправки сообщения.')
     bot.send_message(
         chat_id=TELEGRAM_CHAT_ID,
         text=message
     )
-    logging.debug('Удачная отправка сообщения.')
+    logger.debug('Удачная отправка сообщения.')
 
 
 def get_api_answer(timestamp):
     """Делает запрос, возавращает ответ API."""
+    logger.debug(
+        f'Запрос на эндпойнт {ENDPOINT}, метка времени {timestamp}.'
+    )
     try:
         response = requests.get(
             ENDPOINT, headers=HEADERS, params={'from_date': timestamp}
         )
-        if response.status_code != 200:
-            raise Exception('Статус ответа отличен от 200.')
-        response = response.json()
-    except requests.RequestException:
-        raise Exception('Сбой при запросе к эндпойнту.')
+    except requests.RequestException as error:
+        raise ConnectionError(f'Сбой при запросе к эндпойнту: {error}.')
     else:
+        response = response.json()
+        response_status = http.HTTPStatus
+        if response_status != 200:
+            raise ResponseStatusException(
+                f'Статус ответа: {response_status}. Ожидается 200.'
+            )
+        logger.debug('Успешное получение ответа.')
         return response
 
 
@@ -116,12 +132,12 @@ def main():
                     homework_status = parse_status(homework)
                     send_message(bot, homework_status)
             else:
-                logging.debug('Отсутствие в ответе новых статусов.')
+                logger.debug('Отсутствие в ответе новых статусов.')
             timestamp = response.get('current_date')
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            logging.error(message)
+            logger.error(message)
             send_message(bot, message)
 
         finally:
