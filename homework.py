@@ -40,6 +40,12 @@ class ResponseStatusException(Exception):
     pass
 
 
+class BotException(Exception):
+    """Иключение при отправке сообщения в ТГ."""
+
+    pass
+
+
 def check_tokens():
     """Проверяет доступность переменных окружения."""
     tokens = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
@@ -57,11 +63,15 @@ def check_tokens():
 def send_message(bot, message):
     """Отправляет сообщение в Telegram-чат."""
     logger.debug('Начало отправки сообщения.')
-    bot.send_message(
-        chat_id=TELEGRAM_CHAT_ID,
-        text=message
-    )
-    logger.debug('Удачная отправка сообщения.')
+    try:
+        bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message
+        )
+    except Exception as error:
+        raise BotException(f'Сбой при отправке сообщения: {error}.')
+    else:
+        logger.debug('Удачная отправка сообщения.')
 
 
 def get_api_answer(timestamp):
@@ -148,7 +158,10 @@ def main():
                 send_message(bot, message)
                 previous_message = message
             timestamp = response.get('current_date', default=timestamp)
-        # except
+
+        except BotException as error:
+            logger.exception(error)
+
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.exception(message)
