@@ -135,7 +135,7 @@ def main():
         try:
             response = get_api_answer(timestamp)
             check_response(response)
-            homeworks = response.get('homeworks')
+            homeworks = response['homeworks']
             if not homeworks:
                 logger.debug('Обновления отсутствуют.')
                 continue
