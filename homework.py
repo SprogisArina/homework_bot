@@ -2,11 +2,14 @@ import logging
 import os
 import sys
 import time
+from contextlib import suppress
 from http import HTTPStatus
 
 import requests
 from dotenv import load_dotenv
-from telebot import TeleBot
+from telebot import TeleBot, apihelper
+
+from exceptions import ResponseStatusException
 
 
 load_dotenv()
@@ -34,23 +37,11 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 
-class ResponseStatusException(Exception):
-    """Исключение для случая, когда сатус ответа отличен от 200."""
-
-    pass
-
-
-class BotException(Exception):
-    """Иключение при отправке сообщения в ТГ."""
-
-    pass
-
-
 def check_tokens():
     """Проверяет доступность переменных окружения."""
     tokens = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
     missing_tokens = [
-        token for token in tokens if globals()[token] in (None, '')
+        token for token in tokens if not globals()[token]
     ]
     if missing_tokens:
         logger.critical(
@@ -63,15 +54,11 @@ def check_tokens():
 def send_message(bot, message):
     """Отправляет сообщение в Telegram-чат."""
     logger.debug('Начало отправки сообщения.')
-    try:
-        bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID,
-            text=message
-        )
-    except Exception as error:
-        raise BotException(f'Сбой при отправке сообщения: {error}.')
-    else:
-        logger.debug('Удачная отправка сообщения.')
+    bot.send_message(
+        chat_id=TELEGRAM_CHAT_ID,
+        text=message
+    )
+    logger.debug('Удачная отправка сообщения.')
 
 
 def get_api_answer(timestamp):
@@ -86,14 +73,13 @@ def get_api_answer(timestamp):
         response_status = response.status_code
     except requests.RequestException as error:
         raise ConnectionError(f'Сбой при запросе к эндпойнту: {error}.')
-    else:
-        response = response.json()
-        if response_status != HTTPStatus.OK:
-            raise ResponseStatusException(
-                f'Статус ответа: {response_status}. Ожидается 200.'
-            )
-        logger.debug('Успешное получение ответа.')
-        return response
+    response = response.json()
+    if response_status != HTTPStatus.OK:
+        raise ResponseStatusException(
+            f'Статус ответа: {response_status}. Ожидается 200.'
+        )
+    logger.debug('Успешное получение ответа.')
+    return response
 
 
 def check_response(response):
@@ -126,13 +112,13 @@ def parse_status(homework):
         raise KeyError(
             f'Отсутствуют ключи {",".join(homework_keys)} в ответе API.'
         )
-    homework_status = homework.get('status')
-    homework_name = homework.get('homework_name')
+    homework_status = homework['status']
+    homework_name = homework['homework_name']
     if homework_status not in HOMEWORK_VERDICTS:
         raise ValueError(
             f'Неожиданный статус домашней работы: {homework_status}.'
         )
-    verdict = HOMEWORK_VERDICTS.get(homework_status)
+    verdict = HOMEWORK_VERDICTS[homework_status]
     logger.debug('Успешное завершение извлечения статуса.')
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -159,15 +145,18 @@ def main():
                 previous_message = message
             timestamp = response.get('current_date', default=timestamp)
 
-        except BotException as error:
+        except (apihelper.ApiException, requests.RequestException) as error:
             logger.exception(error)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.exception(message)
             if message != previous_message:
-                send_message(bot, message)
-                previous_message = message
+                with suppress(
+                    apihelper.ApiException, requests.RequestException
+                ):
+                    send_message(bot, message)
+                    previous_message = message
 
         finally:
             time.sleep(RETRY_PERIOD)
